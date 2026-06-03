@@ -14,3 +14,10 @@ result-*
 # devbox
 .devbox/
 .local/
+
+# エディタ / ローカルツール
+.obsidian/
+
+# Claude Code のローカル状態
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

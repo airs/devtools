@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.2/.schema/devbox.schema.json",
+  "packages": [
+    "git@2",
+    "shellcheck@latest",
+    "statix@latest",
+    "deadnix@latest",
+    "nixfmt@latest",
+    "bats@latest",
+    "path:.#env-init"
+  ],
+  "env": {
+    "NIX_CONFIG": "experimental-features = nix-command flakes"
+  },
+  "shell": {
+    "init_hook": [
+      "[ -f .env ] || env-init"
+    ],
+    "scripts": {
+      "check": "nix flake check",
+      "build": "nix build .#env-init",
+      "fmt": "nix fmt"
+    }
+  }
+}

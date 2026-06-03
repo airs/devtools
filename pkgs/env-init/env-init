@@ -1,0 +1,229 @@
+#!/usr/bin/env bash
+# 現在の git worktree 用に .env を生成する汎用エンジン。
+#
+# このエンジンはプロジェクト非依存。ポート名も secret 名も一切知らず、
+# 「worktree 番号 N の計算」だけを担う。サブドメイン等の名前解決はプロキシ層
+# (portless 等) の責務に委譲し、このエンジンは数値ポート stride 用の N を提供するだけにする。
+# 実際の値 (ポート・secret) はリポジトリルートの `.env.template` に bash 構文で書く。
+# `.env.template` を bash として 1 回だけ評価し、評価後の値を `.env` に literal で書き出す。
+#
+# 仕組み:
+#   - primary worktree (main clone) は常に N=0。
+#   - それ以外は既存 worktree の .env に書かれた `WORKTREE_N` マーカー行を読んで
+#     使用済み N を集め、{1..99} の最小未使用値を割り当てる。これにより worktree の
+#     削除・追加で出現順が変わっても、既存 worktree の N と衝突しない。
+#   - -n で明示指定した場合は衝突チェックせずその値を使う (責任はユーザ側)。
+#
+# `.env.template` から参照できるもの:
+#   - N                   : worktree 番号 (例: `$((6100 + N))`)
+#
+# 使い方:
+#   bin/env-init            # 冪等。既存 .env があれば skip (--force で再生成)
+#   bin/env-init --force    # 既存 .env を上書き (N は WORKTREE_N から復元)
+#   bin/env-init -n 3       # worktree 番号 N を手動指定
+#
+# devbox タスク経由: `task env:init` (引数は `-- --force` のように渡す)
+
+set -eu
+
+FORCE=0
+N_OVERRIDE=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -f|--force)
+      FORCE=1
+      shift
+      ;;
+    -n)
+      if [ $# -lt 2 ]; then
+        echo "error: -n requires a worktree number" >&2
+        exit 2
+      fi
+      N_OVERRIDE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      # 先頭ヘッダーコメント (shebang 直後の連続する # 行) を usage として出す。
+      # 行数を固定するとコメント増減で set -eu などの実装行まで混ざるため、
+      # 最初の非コメント行で打ち切る。
+      awk 'NR==1 { next } /^#/ { print; next } { exit }' "$0"
+      exit 0
+      ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# リポジトリルート (このスクリプトを呼んだ worktree のルート)
+REPO_ROOT=$(git rev-parse --show-toplevel)
+ENV_PATH="$REPO_ROOT/.env"
+TEMPLATE_PATH="$REPO_ROOT/.env.template"
+
+if [ ! -f "$TEMPLATE_PATH" ]; then
+  echo "error: $TEMPLATE_PATH not found. The engine generates .env from .env.template." >&2
+  exit 1
+fi
+
+if [ -e "$ENV_PATH" ] && [ "$FORCE" -ne 1 ]; then
+  echo "$ENV_PATH already exists; skipping (use --force to regenerate)."
+  exit 0
+fi
+
+# 既存 .env から WORKTREE_N マーカーを読む (N 真実ソース)。見つからなければ空。
+read_worktree_n() {
+  sed -n 's/^WORKTREE_N=\([0-9][0-9]*\).*/\1/p' "$1" 2>/dev/null | head -1
+}
+
+# worktree 番号 N を決める
+if [ -n "$N_OVERRIDE" ]; then
+  N="$N_OVERRIDE"
+  case "$N" in
+    ''|*[!0-9]*)
+      echo "error: -n value must be a non-negative integer (got '$N')" >&2
+      exit 2
+      ;;
+  esac
+  # 先頭ゼロ (例 `-n 08`) を剥がす。算術展開が `08` / `09` を 8 進数として解釈して
+  # パースエラーになるのを避ける。全ゼロ入力 (`0` / `00`) は `0` に戻す。
+  N=$(printf '%s' "$N" | sed 's/^0*//')
+  [ -z "$N" ] && N=0
+else
+  # primary worktree (main clone) は `git worktree list --porcelain` の先頭に現れる。
+  # そのパスと現在の REPO_ROOT が一致するなら N=0 を固定で使う。
+  PRIMARY_PATH=$(git worktree list --porcelain | awk '/^worktree / { sub(/^worktree /, ""); print; exit }')
+  if [ -z "$PRIMARY_PATH" ]; then
+    echo "error: could not determine primary worktree path" >&2
+    exit 1
+  fi
+
+  if [ "$REPO_ROOT" = "$PRIMARY_PATH" ]; then
+    N=0
+  else
+    # 他の worktree (自分自身と primary を除く) の .env から WORKTREE_N を読み、
+    # 使用済み N を集めて {1..99} の最小未使用値を割り当てる。
+    USED_NS=""
+    # プロセス置換で直接読む (while を current shell で回し USED_NS を親に残す。
+    # bash 必須だが本スクリプトは元から bash 前提)。
+    while IFS= read -r line; do
+      case "$line" in
+        "worktree "*)
+          wt_path=${line#worktree }
+          if [ "$wt_path" = "$REPO_ROOT" ] || [ "$wt_path" = "$PRIMARY_PATH" ]; then
+            continue
+          fi
+          wt_env="$wt_path/.env"
+          if [ -f "$wt_env" ]; then
+            used_n=$(read_worktree_n "$wt_env")
+            if [ -n "$used_n" ]; then
+              USED_NS="$USED_NS $used_n"
+            fi
+          fi
+          ;;
+      esac
+    done < <(git worktree list --porcelain)
+
+    # --force で既存 .env を再生成する場合は、そこから WORKTREE_N を読んで以前の N を
+    # 復元し、他 worktree と衝突していなければそのまま維持する (ポート・hostname が
+    # 勝手にズレるのを防ぐ)。
+    N=""
+    if [ "$FORCE" -eq 1 ] && [ -f "$ENV_PATH" ]; then
+      preferred_n=$(read_worktree_n "$ENV_PATH")
+      if [ -n "$preferred_n" ] && [ "$preferred_n" -ge 1 ] && [ "$preferred_n" -le 99 ]; then
+        collision=0
+        for used in $USED_NS; do
+          if [ "$preferred_n" = "$used" ]; then
+            collision=1
+            break
+          fi
+        done
+        if [ "$collision" -eq 0 ]; then
+          N="$preferred_n"
+        fi
+      fi
+    fi
+
+    if [ -z "$N" ]; then
+      for candidate in {1..99}; do
+        collision=0
+        for used in $USED_NS; do
+          if [ "$candidate" = "$used" ]; then
+            collision=1
+            break
+          fi
+        done
+        if [ "$collision" -eq 0 ]; then
+          N="$candidate"
+          break
+        fi
+      done
+    fi
+
+    if [ -z "$N" ]; then
+      echo "error: all worktree numbers 1..99 are in use by sibling worktrees. Free an unused worktree or pass -n explicitly." >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [ "$N" -gt 99 ]; then
+  # worktree 番号は 0..99 の 100 個まで。上限の根拠 (ポート帯の予約等) はプロジェクト側
+  # (.env.template / README) に閉じており、エンジンは範囲だけを強制する (汎用性のため)。
+  echo "error: worktree number $N exceeds maximum. Worktree numbers must be 0..99." >&2
+  exit 1
+fi
+
+# N を export して .env.template から参照可能にする。サブドメイン等の名前解決は
+# プロキシ層 (portless) が worktree のブランチ名から自動付与するため、ここで slug や
+# worktree 名を計算・export することはしない。
+export N
+
+# .env.template を bash として 1 回だけ評価する。set -a で全代入を環境に載せ、
+# 評価後の最終値を間接展開 `${!NAME}` で取り出せるようにする。
+# 1 行の失敗で全体が落ちないよう errexit / nounset は評価中だけ無効化する
+# (堅牢性は .env.template 著者の責務)。
+set -a
+set +eu
+# shellcheck disable=SC1090
+. "$TEMPLATE_PATH"
+set -eu
+set +a
+
+# 値を `NAME="..."` の double-quote literal で安全に出力するためのエスケープ。
+# 生成 .env は devbox init_hook の `set -a; . ./.env` (bash source) で読まれるため、
+# double-quote 内で特別扱いされる \ " ` $ をバックスラッシュエスケープする。
+# (改行を含む値は想定外。base64 secret / API キー / URL は対象文字を含まない。)
+escape_env_value() {
+  local v=$1
+  v=${v//\\/\\\\}
+  v=${v//\"/\\\"}
+  v=${v//\`/\\\`}
+  v=${v//\$/\\\$}
+  printf '%s' "$v"
+}
+
+# .env を生成。secret を含むため umask 077 で作成し other/group の読取を落とす。
+umask 077
+# 先頭に WORKTREE_N マーカー行を出力 (N 真実ソース)。
+printf 'WORKTREE_N=%s\n' "$N" > "$ENV_PATH"
+
+# .env.template を行単位で走査して .env に書き出す。
+#   - 代入行 NAME=... → 評価後の最終値を ${!NAME} で取り NAME="<escaped>" 形式で出力
+#   - コメント行 / 空行 → そのまま素通し
+#   - それ以外 (if/echo/exit/関数定義などの評価専用ロジック) → .env に出力しない
+#     (素通しするとシェル構文が .env に混入し、`. ./.env` や dotenv パーサを壊す)
+while IFS= read -r line || [ -n "$line" ]; do
+  if [[ $line =~ ^([A-Za-z_][A-Za-z0-9_]*)= ]]; then
+    name=${BASH_REMATCH[1]}
+    value=${!name-}
+    printf '%s="%s"\n' "$name" "$(escape_env_value "$value")" >> "$ENV_PATH"
+  elif [[ $line =~ ^[[:space:]]*(#|$) ]]; then
+    printf '%s\n' "$line" >> "$ENV_PATH"
+  fi
+done < "$TEMPLATE_PATH"
+
+chmod 600 "$ENV_PATH"
+
+echo "Generated $ENV_PATH for worktree N=$N"
