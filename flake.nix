@@ -20,6 +20,7 @@
       # 複数ツールが入るため default は設けない。利用側は常に `#<tool>` を明示する。
       packages = forAllSystems (pkgs: {
         env-init = pkgs.callPackage ./pkgs/env-init/package.nix { };
+        ghas-setup = pkgs.callPackage ./pkgs/ghas-setup/package.nix { };
       });
 
       # test / lint の単一ソース。`nix flake check` で全て走る。
@@ -31,9 +32,10 @@
         {
           # パッケージ build が通ること。
           env-init = self.packages.${system}.env-init;
+          ghas-setup = self.packages.${system}.ghas-setup;
 
           shellcheck = pkgs.runCommand "shellcheck" { nativeBuildInputs = [ pkgs.shellcheck ]; } ''
-            shellcheck ${./pkgs/env-init/env-init}
+            shellcheck ${./pkgs/env-init/env-init} ${./pkgs/ghas-setup/ghas-setup}
             touch "$out"
           '';
 
@@ -58,6 +60,27 @@
                 touch "$out"
               '';
 
+          # ghas-setup を PATH に載せて bats を実行（gh api を叩く本適用パスは認証が要るため
+          # 検証せず、引数パース・pre-flight・--dry-run のみ。gh は不要）。
+          ghas-setup-bats =
+            pkgs.runCommand "ghas-setup-bats"
+              {
+                nativeBuildInputs = [
+                  pkgs.bats
+                  pkgs.bash
+                  pkgs.git
+                  pkgs.coreutils
+                  pkgs.yq-go
+                  self.packages.${system}.ghas-setup
+                ];
+              }
+              ''
+                cp -r ${./pkgs/ghas-setup/tests} tests
+                export HOME="$TMPDIR"
+                bats tests
+                touch "$out"
+              '';
+
           statix = pkgs.runCommand "statix-check" { nativeBuildInputs = [ pkgs.statix ]; } ''
             statix check ${./.}
             touch "$out"
@@ -69,7 +92,7 @@
           '';
 
           nixfmt = pkgs.runCommand "nixfmt-check" { nativeBuildInputs = [ pkgs.nixfmt ]; } ''
-            nixfmt --check ${./flake.nix} ${./pkgs/env-init/package.nix}
+            nixfmt --check ${./flake.nix} ${./pkgs/env-init/package.nix} ${./pkgs/ghas-setup/package.nix}
             touch "$out"
           '';
         }

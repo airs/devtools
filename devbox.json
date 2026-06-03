@@ -8,7 +8,10 @@
     "deadnix@1",
     "nixfmt@1",
     "bats@1",
-    "path:.#env-init"
+    "gh@2",
+    "yq-go@4",
+    "path:.#env-init",
+    "path:.#ghas-setup"
   ],
   "env": {
     "NIX_CONFIG": "experimental-features = nix-command flakes"
