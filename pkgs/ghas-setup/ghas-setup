@@ -108,7 +108,7 @@ echo "==> $ORG org の code security configuration を有効化します"
 
 # 既存 configuration を name で lookup（冪等化のため）。name は config 由来の文字列なので
 # jq 式に直埋めせず env 経由で渡す（" や \ を含んでも jq 式が壊れない）。
-CONFIG_ID=$(GHAS_CONFIG_NAME="$CONFIG_NAME" gh api "/orgs/$ORG/code-security/configurations" \
+CONFIG_ID=$(GHAS_CONFIG_NAME="$CONFIG_NAME" gh api --paginate "/orgs/$ORG/code-security/configurations" \
   --jq '.[] | select(.name == env.GHAS_CONFIG_NAME) | .id' | head -n1)
 
 if [ -z "$CONFIG_ID" ]; then
@@ -127,7 +127,7 @@ gh api --method PUT "/orgs/$ORG/code-security/configurations/$CONFIG_ID/defaults
   -f "default_for_new_repos=$DEFAULT_FOR_NEW_REPOS" --silent
 
 # 既存 repo に attach
-echo "==> 既存 repo 全件に attach"
+echo "==> 既存 repo に attach (scope=$ATTACH_SCOPE)"
 gh api --method POST "/orgs/$ORG/code-security/configurations/$CONFIG_ID/attach" \
   -f "scope=$ATTACH_SCOPE" --silent
 
