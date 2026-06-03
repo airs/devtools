@@ -1,5 +1,6 @@
 # ghas-setup を makeWrapper で wrap する。生スクリプト (./ghas-setup) は libexec にそのまま置き、
-# 外側の wrapper で runtimeInputs を PATH 先頭に prefix して exec するだけ（中身は無改変）。
+# 外側の wrapper で runtimeInputs を PATH 先頭に prefix して exec するだけ（ロジックは無改変。
+# shebang のみビルド時に絶対 bash へ差し替える＝下記 substituteInPlace）。
 # 設計の理由は pkgs/env-init/package.nix のコメントを参照（writeShellApplication を避ける理由・
 # shebang を nix store の bash に固定する理由・PATH prefix で既存 PATH を suffix に残す理由は同じ）。
 #
