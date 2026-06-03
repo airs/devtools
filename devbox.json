@@ -5,7 +5,7 @@
     "openssl@3",
     "shellcheck@0",
     "statix@0",
-    "deadnix@1",
+    "deadnix@1.3.1",
     "nixfmt@1",
     "bats@1",
     "path:.#env-init"
