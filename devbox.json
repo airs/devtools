@@ -6,7 +6,7 @@
     "shellcheck@0",
     "statix@0",
     "deadnix@1",
-    "nixfmt@1",
+    "nixfmt@1.2.0",
     "bats@1",
     "path:.#env-init"
   ],
