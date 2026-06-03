@@ -57,8 +57,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# パスを物理パス (symlink 解決済み) に正規化する。`git rev-parse --show-toplevel` と
+# `git worktree list --porcelain` のパス表現が symlink でズレる (macOS の /var → /private/var 等)
+# と、primary 判定や sibling 除外を誤って N が意図せずズレる。比較に使うパスは全てこれを通す。
+canonicalize_dir() {
+  ( cd "$1" 2>/dev/null && pwd -P ) || printf '%s' "$1"
+}
+
 # リポジトリルート (このスクリプトを呼んだ worktree のルート)
-REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_ROOT=$(canonicalize_dir "$(git rev-parse --show-toplevel)")
 ENV_PATH="$REPO_ROOT/.env"
 TEMPLATE_PATH="$REPO_ROOT/.env.template"
 
@@ -98,6 +105,7 @@ else
     echo "error: could not determine primary worktree path" >&2
     exit 1
   fi
+  PRIMARY_PATH=$(canonicalize_dir "$PRIMARY_PATH")
 
   if [ "$REPO_ROOT" = "$PRIMARY_PATH" ]; then
     N=0
@@ -110,7 +118,7 @@ else
     while IFS= read -r line; do
       case "$line" in
         "worktree "*)
-          wt_path=${line#worktree }
+          wt_path=$(canonicalize_dir "${line#worktree }")
           if [ "$wt_path" = "$REPO_ROOT" ] || [ "$wt_path" = "$PRIMARY_PATH" ]; then
             continue
           fi

@@ -4,9 +4,10 @@
 ENV_INIT="${ENV_INIT:-env-init}"
 
 setup() {
-  # macOS の $TMPDIR は /var → /private/var の symlink。git rev-parse --show-toplevel は
-  # 物理パスを返すため、worktree のパス比較が一致するよう base を物理パスに正規化する。
-  BASE="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
+  # base を正規化せず $BATS_TEST_TMPDIR をそのまま使う。macOS では symlink (/var → /private/var)
+  # を含むため、env-init 側の canonicalize_dir によるパス正規化（symlink 跨ぎでの primary 判定・
+  # sibling 除外）を実地で検証することになる。
+  BASE="$BATS_TEST_TMPDIR"
   REPO="$BASE/repo"
   mkdir -p "$REPO"
   cd "$REPO"
