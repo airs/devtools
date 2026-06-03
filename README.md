@@ -36,11 +36,19 @@ devbox run fmt      # nix fmt（nixfmt-tree でツリー全体を整形）
 
 安定版は [GitHub Releases](https://github.com/airs/devtools/releases) の最新（Latest）を参照し、その `vX.Y.Z` を `<ref>` に pin する。
 
+各リリースでは不変タグ `vX.Y.Z` に加え、同メジャーの移動タグ `vX` を最新へ追従させる。利用側は厳密 pin（`vX.Y.Z`）と
+メジャー追従（`vX`）を `<ref>` で選べる。Nix flake の `<ref>` はワイルドカード／セムバー範囲を取れないため、メジャー追従は
+このサーバ側の移動タグで実現する。
+
 SemVer は各ツールの CLI 契約（引数・出力・終了コード）で判断する。
 
 - **MAJOR**: 破壊的変更（フラグ改名・出力フォーマット変更・終了コード変更・ツール削除）
 - **MINOR**: 後方互換の追加（新ツール追加・新しい任意フラグ）
 - **PATCH**: 挙動を変えないバグ修正
+
+配布物（env-init 等）は実行時ツール（bash・git・gawk・gnused・coreutils）を `flake.lock` の nixpkgs から同梱する。
+このため `flake.lock` の更新は同梱ツールの版を変え、利用側へ届けるには release が必要になる。`flake.lock` を更新したら
+SemVer を上げて release する。CLI 契約を変えない依存更新は **PATCH**、挙動が変わる場合は上の基準で MINOR / MAJOR に上げる。
 
 ## ツール
 
@@ -61,9 +69,13 @@ SemVer は各ツールの CLI 契約（引数・出力・終了コード）で�
    }
    ```
 
-   `<ref>` は tag / commit でピンする。本リポジトリ自身の `devbox.json` は、ローカル flake を dogfood するため
-   `path:.#env-init` を使う点だけが利用側と異なる。Nix を使わない環境では `pkgs/env-init/env-init` を直接実行できる
-   （生スクリプトは単体実行可能なまま）。
+   `<ref>` は次の 2 パターンから選ぶ。
+
+   - 低摩擦（メジャー追従）: `github:airs/devtools/v1#env-init` — 移動タグ。`devbox update` で最新の 1.x を取得する。
+   - 厳密 pin: `github:airs/devtools/v1.2.0#env-init` — 不変タグ。版を固定し、利用側 Renovate でメジャー更新を抑止できる。
+
+   本リポジトリ自身の `devbox.json` は、ローカル flake を dogfood するため `path:.#env-init` を使う点だけが利用側と
+   異なる。Nix を使わない環境では `pkgs/env-init/env-init` を直接実行できる（生スクリプトは単体実行可能なまま）。
 
 2. **利用側 repo がルートに `.env.template` を用意する**（中央には持ち込まない repo 固有ファイル）。各 worktree で
    `N` を参照し、ポートを `$((BASE + N))` でずらし、secret を `openssl rand` / `op read` 等で書く。書式は本リポジトリ

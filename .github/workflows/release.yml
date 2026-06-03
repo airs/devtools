@@ -1,11 +1,12 @@
 name: release
 
-# SemVer タグ (vX.Y.Z) を push すると、check を通したうえで
-# GitHub Release を自動生成ノート付きで作成する。
+# SemVer タグ (vX.Y.Z) を push すると、check を通したうえで GitHub Release を
+# 自動生成ノート付きで作成し、同メジャーの移動タグ vX を最新へ force 更新する。
+# トリガは vX.Y.Z に限定し、vX 移動による二重発火を防ぐ。
 on:
   push:
     tags:
-      - "v*"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
@@ -24,3 +25,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+      - name: Move major tag
+        # vX.Y.Z -> vX の移動タグを最新コミットへ force 更新（lightweight タグ）。
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "$major"
