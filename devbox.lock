@@ -97,9 +97,9 @@
         }
       }
     },
-    "git@2": {
-      "last_modified": "2026-05-21T08:15:18Z",
-      "resolved": "github:NixOS/nixpkgs/4a29d733e8a7d5b824c3d8c958a946a9867b3eb2#git",
+    "git@2.54.0": {
+      "last_modified": "2026-05-26T09:13:58Z",
+      "resolved": "github:NixOS/nixpkgs/f44f7788c891fbe5542177df78374f8cdab10e8f#git",
       "source": "devbox-search",
       "version": "2.54.0",
       "systems": {
