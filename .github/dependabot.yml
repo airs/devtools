@@ -1,0 +1,28 @@
+# Dependabot 設定。github-actions と nix（flake.lock）の version updates を担う。
+# devbox は Dependabot 未対応のため Renovate (renovate.json) に分担。
+# cooldown を設ける理由: 公開直後の汚染版を 3 日寝かせて弾くため
+#                        （security updates は cooldown 対象外なので遅延しない）。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+  - package-ecosystem: nix
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 3

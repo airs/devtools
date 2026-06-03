@@ -1,0 +1,18 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["devbox"],
+  "dependencyDashboard": false,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* * * * *"]
+  },
+  "packageRules": [
+    {
+      "description": "devbox.json は Major 制約を維持し devbox.lock のみ lockFileMaintenance で更新する。version 更新 PR は devbox.json を書き換えるため無効化する。",
+      "matchManagers": ["devbox"],
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "digest"],
+      "enabled": false
+    }
+  ]
+}
