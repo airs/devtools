@@ -1,7 +1,9 @@
 #!/usr/bin/env bats
-# ghas-setup のテスト。ghas-setup は PATH 上にある前提（GHAS_SETUP で上書き可）。
-# 実 org を変更するパス（gh api）は認証が要るため検証しない。認証なしで到達できる
-# 引数パース・pre-flight・--dry-run（gh auth チェックより手前で exit）だけを対象にする。
+# ghas-setup のテスト。引数パース・pre-flight・--dry-run は wrap 済みの ghas-setup（GHAS_SETUP、
+# 既定は PATH 上の ghas-setup）で検証する。実適用パス（create/update 分岐・gh api 呼び出し列）は
+# gh をスタブし、生スクリプト（GHAS_SETUP_RAW）を bash で直起動して検証する。wrapper は gh を
+# PATH 先頭に prefix するため stub で上書きできないが、bash 直起動なら shebang を回避でき PATH 上の
+# stub gh が使われる。
 
 GHAS_SETUP="${GHAS_SETUP:-ghas-setup}"
 
@@ -34,6 +36,36 @@ actions:
   default_workflow_permissions: read
   can_approve_pull_request_reviews: false
 EOF
+}
+
+# gh をスタブする。呼び出し引数を $GH_LOG に記録し、種別ごとに想定 stdout を返す:
+#   - auth status        : "admin:org" を出力（scope 判定の grep 用）/ exit 0
+#   - api（--slurp あり） : 既存 lookup。$1（""=新規, それ以外=既存 id）を返す
+#   - api（POST で末尾が /configurations）: 新規作成。固定 id 123 を返す
+#   - その他 api          : 読み戻し等。{} を返す
+make_gh_stub() {
+  STUB_DIR="$BASE/stubbin"
+  GH_LOG="$BASE/gh-calls.log"
+  mkdir -p "$STUB_DIR"
+  : > "$GH_LOG"
+  {
+    printf '#!%s\n' "$(command -v bash)"
+    cat <<EOF
+echo "\$*" >> "$GH_LOG"
+case "\$1" in
+  auth) echo "admin:org"; exit 0 ;;
+  api)
+    for a in "\$@"; do [ "\$a" = "--slurp" ] && { printf '%s' "$1"; exit 0; }; done
+    case "\$*" in
+      *"--method POST"*"/code-security/configurations "*) printf '123'; exit 0 ;;
+    esac
+    echo '{}'; exit 0 ;;
+esac
+exit 0
+EOF
+  } > "$STUB_DIR/gh"
+  chmod +x "$STUB_DIR/gh"
+  PATH="$STUB_DIR:$PATH"
 }
 
 @test "不明な引数は usage を出して exit 1" {
@@ -93,4 +125,35 @@ EOF
   run "$GHAS_SETUP" --config "$BASE/alt/other.yml" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"org: alt-org"* ]]
+}
+
+@test "適用(新規): 既存 config 無し → POST 作成 + defaults/attach/actions を config 値で叩く" {
+  write_config "$REPO"
+  make_gh_stub ""   # lookup は空 → 新規作成分岐
+  run bash "$GHAS_SETUP_RAW"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"configuration を新規作成"* ]]
+  # 新規作成 POST と、作成された id=123 への defaults/attach/actions 適用
+  grep -q -- "--method POST /orgs/example-org/code-security/configurations " "$GH_LOG"
+  grep -q -- "/code-security/configurations/123/defaults" "$GH_LOG"
+  grep -q -- "/code-security/configurations/123/attach" "$GH_LOG"
+  grep -q -- "--method PUT /orgs/example-org/actions/permissions/workflow" "$GH_LOG"
+  # config 値が field として渡る
+  grep -q -- "default_for_new_repos=all" "$GH_LOG"
+  grep -q -- "scope=all" "$GH_LOG"
+  grep -q -- "can_approve_pull_request_reviews=false" "$GH_LOG"
+  # 更新分岐は呼ばれない
+  ! grep -q -- "--method PATCH" "$GH_LOG"
+}
+
+@test "適用(更新): 既存 config 有り → PATCH 更新し新規作成しない" {
+  write_config "$REPO"
+  make_gh_stub "999"   # lookup が既存 id を返す → 更新分岐
+  run bash "$GHAS_SETUP_RAW"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"既存 configuration を更新"* ]]
+  grep -q -- "--method PATCH /orgs/example-org/code-security/configurations/999" "$GH_LOG"
+  grep -q -- "/code-security/configurations/999/defaults" "$GH_LOG"
+  # 新規作成 POST は叩かない
+  ! grep -q -- "--method POST /orgs/example-org/code-security/configurations " "$GH_LOG"
 }

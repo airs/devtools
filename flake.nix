@@ -60,9 +60,12 @@
                 touch "$out"
               '';
 
-          # ghas-setup を PATH に載せて bats を実行。テストは引数パース・pre-flight・--dry-run
-          # のみで gh api を呼ばない（gh auth チェックより手前で exit する）。wrap 済みパッケージを
-          # 使うため closure には gh が入るが、テスト実行時に起動はしない。
+          # ghas-setup の bats。引数パース・pre-flight・--dry-run は wrap 済みパッケージ
+          # ($GHAS_SETUP) で、実適用パス（create/update 分岐・API 呼び出し列）は gh をスタブして
+          # 生スクリプト ($GHAS_SETUP_RAW) を bash で直起動して検証する（wrapper は gh を PATH
+          # 先頭に prefix するため stub で上書きできない。bash 直起動なら shebang も回避でき、
+          # PATH 上の stub gh が使われる）。wrap 済みパッケージの closure には gh が入るが、
+          # --dry-run テストでは gh auth チェックより手前で exit するため起動はしない。
           ghas-setup-bats =
             pkgs.runCommand "ghas-setup-bats"
               {
@@ -71,12 +74,14 @@
                   pkgs.bash
                   pkgs.git
                   pkgs.coreutils
+                  pkgs.gnugrep
                   pkgs.yq-go
                   self.packages.${system}.ghas-setup
                 ];
               }
               ''
                 cp -r ${./pkgs/ghas-setup/tests} tests
+                export GHAS_SETUP_RAW=${./pkgs/ghas-setup/ghas-setup}
                 export HOME="$TMPDIR"
                 bats tests
                 touch "$out"
