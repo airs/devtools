@@ -42,10 +42,12 @@ EOF
 }
 
 # gh をスタブする。呼び出し引数を $GH_LOG に記録し、種別ごとに想定 stdout を返す:
-#   - auth status        : "admin:org" を出力（scope 判定の grep 用）/ exit 0
-#   - api（--slurp あり） : 既存 lookup。$1（""=新規, それ以外=既存 id）を返す
+#   - auth status              : "admin:org" を出力（scope 判定の grep 用）/ exit 0
+#   - api（--paginate=lookup）  : 既存 lookup。$1（""=新規, それ以外=既存 id）を返す
 #   - api（POST で末尾が /configurations）: 新規作成。固定 id 123 を返す
-#   - その他 api          : 読み戻し等。{} を返す
+#   - その他 api                : 読み戻し等。{} を返す
+# 併せて実 gh の制約「--slurp は --jq と併用不可」を再現し、両指定なら非 0 終了する
+# （この組み合わせの regression を検知するため）。
 make_gh_stub() {
   STUB_DIR="$BASE/stubbin"
   GH_LOG="$BASE/gh-calls.log"
@@ -58,7 +60,19 @@ echo "\$*" >> "$GH_LOG"
 case "\$1" in
   auth) echo "admin:org"; exit 0 ;;
   api)
-    for a in "\$@"; do [ "\$a" = "--slurp" ] && { printf '%s' "$1"; exit 0; }; done
+    has_slurp=0; has_jq=0; has_paginate=0
+    for a in "\$@"; do
+      case "\$a" in
+        --slurp) has_slurp=1 ;;
+        --jq|-q) has_jq=1 ;;
+        --paginate) has_paginate=1 ;;
+      esac
+    done
+    if [ "\$has_slurp" = 1 ] && [ "\$has_jq" = 1 ]; then
+      echo "the \`--slurp\` option is not supported with \`--jq\` or \`--template\`" >&2
+      exit 1
+    fi
+    [ "\$has_paginate" = 1 ] && { printf '%s' "$1"; exit 0; }
     case "\$*" in
       *"--method POST"*"/code-security/configurations "*) printf '123'; exit 0 ;;
     esac
