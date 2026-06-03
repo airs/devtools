@@ -18,11 +18,11 @@
 #   - N                   : worktree 番号 (例: `$((6100 + N))`)
 #
 # 使い方:
-#   bin/env-init            # 冪等。既存 .env があれば skip (--force で再生成)
-#   bin/env-init --force    # 既存 .env を上書き (N は WORKTREE_N から復元)
-#   bin/env-init -n 3       # worktree 番号 N を手動指定
+#   env-init            # 冪等。既存 .env があれば skip (--force で再生成)
+#   env-init --force    # 既存 .env を上書き (N は WORKTREE_N から復元)
+#   env-init -n 3       # worktree 番号 N を手動指定
 #
-# devbox タスク経由: `task env:init` (引数は `-- --force` のように渡す)
+# devbox の init_hook 経由: `[ -f .env ] || env-init` (PATH 上の env-init を起動)
 
 set -eu
 
