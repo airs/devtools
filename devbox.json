@@ -3,11 +3,11 @@
   "packages": [
     "git@2",
     "openssl@3",
-    "shellcheck@latest",
-    "statix@latest",
-    "deadnix@latest",
-    "nixfmt@latest",
-    "bats@latest",
+    "shellcheck@0",
+    "statix@0",
+    "deadnix@1",
+    "nixfmt@1",
+    "bats@1",
     "path:.#env-init"
   ],
   "env": {
