@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# GitHub org の GHAS / Actions セキュリティ設定を code-security-configurations API で一括有効化する汎用エンジン。
+# engine（本スクリプト）とポリシー値（config yaml）を分離する。
+#   engine: config を読む / gh api を叩く / 適用後の状態を読み戻して表示する だけを知る。
+#   org 名・scanner 名・enable 値・enforcement・Actions 設定はすべて config 由来。
+# config は呼び出した git worktree の .github/ghas.yml（--config で別 yaml を渡せる）。
+# 詳細は README.md を参照。
+set -euo pipefail
+
+# リポジトリルート（このスクリプトを呼んだ git worktree のルート）を cwd 基準で解決する。
+# git 管理外で実行された場合は git の生エラーではなく、何をすべきか分かるメッセージで終了する。
+if ! REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); then
+  echo "git worktree 内で実行してください（git リポジトリのルートから .github/ghas.yml を解決します）。" >&2
+  exit 1
+fi
+
+CONFIG="$REPO_ROOT/.github/ghas.yml"
+DRY_RUN=false
+
+# 引数パース: --config <path>（別 org 用 yaml を渡す）/ --dry-run（org を変更せず適用予定を表示）
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --config)
+      if [ $# -lt 2 ]; then
+        echo "--config に値がありません" >&2
+        echo "usage: ghas-setup [--config <path>] [--dry-run]" >&2
+        exit 1
+      fi
+      CONFIG="$2"; shift 2 ;;
+    --config=*)
+      CONFIG="${1#*=}"; shift ;;
+    --dry-run)
+      DRY_RUN=true; shift ;;
+    *)
+      echo "不明な引数: $1" >&2
+      echo "usage: ghas-setup [--config <path>] [--dry-run]" >&2
+      exit 1 ;;
+  esac
+done
+
+# pre-flight: yq（mikefarah 版 = yq-go）
+command -v yq >/dev/null 2>&1 || {
+  echo "yq が見つかりません。mikefarah 版 yq（yq-go）が必要です。wrapper 経由（nix run .#ghas-setup や devbox）なら同梱されます。生スクリプトを直接使う場合は yq-go をインストールしてください。" >&2
+  exit 1
+}
+
+# pre-flight: config file
+[ -f "$CONFIG" ] || {
+  echo "config file が見つかりません: $CONFIG" >&2
+  exit 1
+}
+
+# config 読み出し（ポリシー値の単一ソース）
+ORG=$(yq '.org' "$CONFIG")
+CONFIG_NAME=$(yq '.configuration.name' "$CONFIG")
+CONFIG_DESC=$(yq '.configuration.description' "$CONFIG")
+ENFORCEMENT=$(yq '.configuration.enforcement' "$CONFIG")
+DEFAULT_FOR_NEW_REPOS=$(yq '.default_for_new_repos' "$CONFIG")
+ATTACH_SCOPE=$(yq '.attach_existing_repos' "$CONFIG")
+ACTIONS_DEFAULT_PERMS=$(yq '.actions.default_workflow_permissions' "$CONFIG")
+ACTIONS_APPROVE_PR=$(yq '.actions.can_approve_pull_request_reviews' "$CONFIG")
+
+# configuration の body フィールドを config 由来で動的生成
+CONFIG_BODY_FIELDS=(
+  -f "name=$CONFIG_NAME"
+  -f "description=$CONFIG_DESC"
+  -f "enforcement=$ENFORCEMENT"
+)
+while IFS= read -r entry; do
+  CONFIG_BODY_FIELDS+=(-f "$entry")
+done < <(yq '.configuration.scanners | to_entries | .[] | .key + "=" + .value' "$CONFIG")
+
+# --dry-run: 解決済みの値とこれから叩く API を表示して org を変更せず exit
+if [ "$DRY_RUN" = true ]; then
+  echo "==> dry-run: config=$CONFIG"
+  echo "org: $ORG"
+  echo "configuration:"
+  echo "  name: $CONFIG_NAME"
+  echo "  enforcement: $ENFORCEMENT"
+  echo "  scanners:"
+  yq '.configuration.scanners | to_entries | .[] | "    " + .key + ": " + .value' "$CONFIG"
+  echo "default_for_new_repos: $DEFAULT_FOR_NEW_REPOS"
+  echo "attach_existing_repos: $ATTACH_SCOPE"
+  echo "actions.default_workflow_permissions: $ACTIONS_DEFAULT_PERMS"
+  echo "actions.can_approve_pull_request_reviews: $ACTIONS_APPROVE_PR"
+  echo
+  echo "==> これから叩く API:"
+  echo "  POST  /orgs/$ORG/code-security/configurations       (既存が無ければ新規作成)"
+  echo "  PATCH /orgs/$ORG/code-security/configurations/<id>  (既存があれば更新) name / description / enforcement / scanners"
+  echo "  PUT  /orgs/$ORG/code-security/configurations/<id>/defaults  default_for_new_repos=$DEFAULT_FOR_NEW_REPOS"
+  echo "  POST /orgs/$ORG/code-security/configurations/<id>/attach  scope=$ATTACH_SCOPE"
+  echo "  PUT  /orgs/$ORG/actions/permissions/workflow  default_workflow_permissions=$ACTIONS_DEFAULT_PERMS can_approve_pull_request_reviews=$ACTIONS_APPROVE_PR"
+  exit 0
+fi
+
+# pre-flight: gh CLI 認証
+gh auth status -h github.com >/dev/null 2>&1 || {
+  echo "gh CLI が未認証です。'gh auth login' を実行してください。" >&2
+  exit 1
+}
+
+# pre-flight: admin:org scope の有無
+gh auth status -h github.com 2>&1 | grep -q "admin:org" || {
+  echo "gh CLI に admin:org scope がありません。'gh auth refresh -h github.com -s admin:org' を実行してください。" >&2
+  exit 1
+}
+
+echo "==> $ORG org の code security configuration を有効化します"
+
+# 既存 configuration を name で lookup（冪等化のため）。configuration が 30 件（既定 per_page）を
+# 超えても取りこぼさないよう --paginate で全件取得する。--slurp で全ページを 1 つの配列にまとめ、
+# jq 側で最初の一致 id を取り出す（`| head -n1` だと pagination 途中で stdout が閉じ、gh が SIGPIPE
+# で非 0 終了して set -o pipefail がスクリプト全体を落としうるため使わない）。
+# name は config 由来の文字列なので jq 式に直埋めせず env 経由で渡す（" や \ を含んでも壊れない）。
+CONFIG_ID=$(GHAS_CONFIG_NAME="$CONFIG_NAME" gh api --paginate --slurp "/orgs/$ORG/code-security/configurations" \
+  --jq '[.[][] | select(.name == env.GHAS_CONFIG_NAME) | .id] | .[0] // ""')
+
+if [ -z "$CONFIG_ID" ]; then
+  echo "  - configuration を新規作成: $CONFIG_NAME"
+  CONFIG_ID=$(gh api --method POST "/orgs/$ORG/code-security/configurations" \
+    "${CONFIG_BODY_FIELDS[@]}" --jq '.id')
+else
+  echo "  - 既存 configuration を更新: $CONFIG_NAME (id=$CONFIG_ID)"
+  gh api --method PATCH "/orgs/$ORG/code-security/configurations/$CONFIG_ID" \
+    "${CONFIG_BODY_FIELDS[@]}" --silent
+fi
+
+# 新規 repo の default に指定
+echo "==> 新規 repo の default configuration に指定"
+gh api --method PUT "/orgs/$ORG/code-security/configurations/$CONFIG_ID/defaults" \
+  -f "default_for_new_repos=$DEFAULT_FOR_NEW_REPOS" --silent
+
+# 既存 repo に attach
+echo "==> 既存 repo に attach (scope=$ATTACH_SCOPE)"
+gh api --method POST "/orgs/$ORG/code-security/configurations/$CONFIG_ID/attach" \
+  -f "scope=$ATTACH_SCOPE" --silent
+
+# Actions: GITHUB_TOKEN default permission を config 値に
+echo "==> Actions GITHUB_TOKEN default permission = $ACTIONS_DEFAULT_PERMS"
+gh api --method PUT "/orgs/$ORG/actions/permissions/workflow" \
+  -F "default_workflow_permissions=$ACTIONS_DEFAULT_PERMS" \
+  -F "can_approve_pull_request_reviews=$ACTIONS_APPROVE_PR" \
+  --silent
+
+# 検証: 適用後の状態を読み戻して表示
+echo "==> 適用後の状態:"
+echo "--- configuration ---"
+gh api "/orgs/$ORG/code-security/configurations/$CONFIG_ID" --jq '{
+  id, name, enforcement,
+  advanced_security, dependency_graph,
+  dependabot_alerts, dependabot_security_updates,
+  secret_scanning, secret_scanning_push_protection,
+  secret_scanning_validity_checks, secret_scanning_non_provider_patterns,
+  private_vulnerability_reporting
+}'
+echo "--- default for new repos ---"
+gh api "/orgs/$ORG/code-security/configurations/defaults" --jq '.[] | {default_for_new_repos, configuration_name: .configuration.name}'
+echo "--- Actions permissions ---"
+gh api "/orgs/$ORG/actions/permissions/workflow"
+
+echo "完了しました。"

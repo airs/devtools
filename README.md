@@ -12,12 +12,13 @@ Nix flake × devbox。言語非依存でツールを PATH へ配布し、`flake.
 flake.nix              # packages / checks (test・lint) / formatter を公開
 devbox.json            # 開発環境（Nix の test/lint ツール）と自己 dogfooding
 .env.template          # env-init 用テンプレートの書式例（本 repo の dogfood でも使用）
+.github/ghas.yml       # ghas-setup 用ポリシー（本 repo の dogfood 兼・書式例）
 pkgs/
-  env-init/
-    package.nix        # env-init を makeWrapper で wrap する派生
-    env-init           # エンジン本体（単体実行可能な生スクリプト）
-    tests/             # bats テスト
+  env-init/            # 各 pkg の構成は pkg 内 README を参照
+  ghas-setup/
 ```
+
+各パッケージの内部構成は [ツール](#ツール) の各 README を参照。
 
 ## 開発
 
@@ -52,31 +53,11 @@ SemVer を上げて release する。CLI 契約を変えない依存更新は **
 
 ## ツール
 
-### env-init
+各ツールの使い方・前提・設定書式は各パッケージの README を参照。
 
-現在の git worktree 用に `.env` を生成する汎用エンジン。worktree 番号 N を計算し、リポジトリルートの
-`.env.template`（bash として 1 回評価される）から `.env` を書き出す。プロジェクト非依存設計で、実行時依存は
-`bash` / `git` / `gawk` / `gnused` + coreutils。
+- [env-init](pkgs/env-init/README.md) — 現在の git worktree 用に `.env` を生成する汎用エンジン。
+- [ghas-setup](pkgs/ghas-setup/README.md) — GitHub org の GHAS / セキュリティ設定を `gh api` で一括適用する汎用エンジン。
 
-**利用側 repo での使い方**:
-
-1. `devbox.json` の `packages` に flake 参照を足し、init_hook で起動する。
-
-   ```jsonc
-   {
-     "packages": ["github:airs/devtools/<ref>#env-init"],
-     "shell": { "init_hook": ["[ -f .env ] || env-init"] }
-   }
-   ```
-
-   `<ref>` は次の 2 パターンから選ぶ。
-
-   - 低摩擦（メジャー追従）: `github:airs/devtools/v1#env-init` — 移動タグ。`devbox update` で最新の 1.x を取得する。
-   - 厳密 pin: `github:airs/devtools/v1.2.0#env-init` — 不変タグ。版を固定し、利用側 Renovate でメジャー更新を抑止できる。
-
-   本リポジトリ自身の `devbox.json` は、ローカル flake を dogfood するため `path:.#env-init` を使う点だけが利用側と
-   異なる。Nix を使わない環境では `pkgs/env-init/env-init` を直接実行できる（生スクリプトは単体実行可能なまま）。
-
-2. **利用側 repo がルートに `.env.template` を用意する**（中央には持ち込まない repo 固有ファイル）。各 worktree で
-   `N` を参照し、ポートを `$((BASE + N))` でずらし、secret を `openssl rand` / `op read` 等で書く。書式は本リポジトリ
-   ルートの [`.env.template`](.env.template) を参照（コピー用ではなく書式例）。
+利用側は `devbox.json` の `packages` に flake 参照（`github:airs/devtools/<ref>#<tool>`）を足す。`<ref>` の選び方は
+[バージョニング](#バージョニング)を参照。本リポジトリ自身は dogfood のため `path:.#<tool>` を使う。Nix を使わない環境では
+`pkgs/<tool>/<tool>` を直接実行できる（生スクリプトは単体実行可能なまま）。

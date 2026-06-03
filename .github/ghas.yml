@@ -1,0 +1,46 @@
+# GHAS / Actions セキュリティ設定（declarative policy）
+#
+# engine: ghas-setup がこのファイルを読んで `gh api` に適用する。
+# ポリシー値（どの scanner を有効にするか・enforcement・Actions 権限）はすべてここに集約し、
+# engine 側はロジックだけを持つ。git diff だけでポリシー変更意図が追えるようにインラインで文書化する。
+# 各項目の意味は https://docs.github.com/en/rest/code-security/configurations を参照。
+#
+# これは devtools 自身の dogfood config 兼・利用側がコピーする書式例。利用側は org を自分の org に変える。
+
+org: airs
+
+configuration:
+  name: airs-default
+  description: airs org default code security configuration. Managed by ghas-setup.
+  # enforced: repo 側で設定をオーバーライド不可に強制する（org ポリシーを全 repo へ確実に適用）
+  enforcement: enforced
+  scanners:
+    # GHAS 本体。code scanning / secret scanning 等の前提となるため有効化
+    advanced_security: enabled
+    # 依存グラフ。Dependabot alerts / security updates の前提
+    dependency_graph: enabled
+    # 既知 CVE を含む依存を検知してアラート
+    dependabot_alerts: enabled
+    # CVE 修正版への PR を自動生成（サプライチェーン防御の中核）
+    dependabot_security_updates: enabled
+    # コミット履歴・push 内のシークレット検知
+    secret_scanning: enabled
+    # シークレットを含む push をブロック（漏洩を未然に防ぐ）
+    secret_scanning_push_protection: enabled
+    # 検知したシークレットが有効（生きている）かを発行元 API で検証
+    secret_scanning_validity_checks: enabled
+    # 既知パターン外の汎用シークレット（独自トークン等）も検知
+    secret_scanning_non_provider_patterns: enabled
+    # 脆弱性の非公開報告（private vulnerability reporting）受付を有効化
+    private_vulnerability_reporting: enabled
+
+# 新規 repo の default configuration に本 configuration を指定（all = public/private 問わず）
+default_for_new_repos: all
+# 既存 repo 全件に attach（all = org 内すべて）
+attach_existing_repos: all
+
+actions:
+  # GITHUB_TOKEN の既定権限を read に最小化（書き込みは workflow 側で明示 grant）
+  default_workflow_permissions: read
+  # workflow から PR レビュー承認を不可に（権限昇格経路を塞ぐ）
+  can_approve_pull_request_reviews: false
