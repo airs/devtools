@@ -38,9 +38,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# pre-flight: yq（mikefarah 版 = devbox の yq-go）
+# pre-flight: yq（mikefarah 版 = yq-go）
 command -v yq >/dev/null 2>&1 || {
-  echo "yq が見つかりません。'devbox shell' 内で実行してください（devbox.json の yq-go）。" >&2
+  echo "yq が見つかりません。mikefarah 版 yq（yq-go）が必要です。wrapper 経由（nix run .#ghas-setup や devbox）なら同梱されます。生スクリプトを直接使う場合は yq-go をインストールしてください。" >&2
   exit 1
 }
 
