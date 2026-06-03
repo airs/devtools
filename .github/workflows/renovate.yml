@@ -26,6 +26,11 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Install devbox
         uses: jetify-com/devbox-install-action@8c6a66ed6273138b1915457069de78cb52fe3bd7 # v0.15.0
+      - name: Setup Node
+        # runner 既定の Node は Renovate 43 の要求（^24.11.0）に満たないため明示的に入れる。
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
       - name: Run Renovate
         # メジャー固定で破壊的変更を避けつつ patch/minor は取り込む。メジャー更新は手動で上げる。
         run: npx --yes renovate@43
