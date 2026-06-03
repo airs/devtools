@@ -2,6 +2,12 @@
 
 org 横断で共有する汎用 dev ツールの集約リポジトリ。各利用 repo はここを参照するだけにし、コピペを撲滅（DRY）してツールの版を固定する。
 
+## 参照用 Good Practice
+
+本リポジトリは汎用ツールの集約に加え、設定・運用の実例を**他プロジェクトが Good Practice として参照する場所**でもある。言語・ツールに依存しない汎用ルールをここで枯らし、各プロジェクトは下敷きにして固有の参照ドキュメントを足して使う。
+
+- [`.github/copilot-instructions.md`](.github/copilot-instructions.md) — GitHub Copilot のレビュー用カスタムインストラクション。YAGNI / DRY の徹底、重箱の隅をつつかない、初回レビューでの網羅と圧縮を中心に、レビューの収束を早める汎用ルール。
+
 ## 採用方式
 
 Nix flake × devbox。言語非依存でツールを PATH へ配布し、`flake.lock` / `devbox.lock` で版とコンテナ build を再現可能に固定する。利用側 repo は同一の flake 参照を `devbox.json` の `packages` に足すだけでよい。
@@ -13,6 +19,7 @@ flake.nix              # packages / checks (test・lint) / formatter を公開
 devbox.json            # 開発環境（Nix の test/lint ツール）と自己 dogfooding
 .env.template          # env-init 用テンプレートの書式例（本 repo の dogfood でも使用）
 .github/ghas.yml       # ghas-setup 用ポリシー（本 repo の dogfood 兼・書式例）
+.github/copilot-instructions.md  # Copilot レビュー用カスタムインストラクション（汎用 Good Practice）
 pkgs/
   env-init/            # 各 pkg の構成は pkg 内 README を参照
   ghas-setup/
