@@ -6,6 +6,9 @@
 # stub gh が使われる。
 
 GHAS_SETUP="${GHAS_SETUP:-ghas-setup}"
+# 実適用パス用の生スクリプト。flake check では nix store のパスが渡る。未設定時（repo で
+# `bats pkgs/ghas-setup/tests` を直接実行）は隣の生スクリプトを既定にする。
+GHAS_SETUP_RAW="${GHAS_SETUP_RAW:-$BATS_TEST_DIRNAME/../ghas-setup}"
 
 setup() {
   BASE="$BATS_TEST_TMPDIR"

@@ -85,7 +85,8 @@ if [ "$DRY_RUN" = true ]; then
   echo "actions.can_approve_pull_request_reviews: $ACTIONS_APPROVE_PR"
   echo
   echo "==> これから叩く API:"
-  echo "  POST|PATCH /orgs/$ORG/code-security/configurations  (name / description / enforcement / scanners)"
+  echo "  POST  /orgs/$ORG/code-security/configurations       (既存が無ければ新規作成)"
+  echo "  PATCH /orgs/$ORG/code-security/configurations/<id>  (既存があれば更新) name / description / enforcement / scanners"
   echo "  PUT  /orgs/$ORG/code-security/configurations/<id>/defaults  default_for_new_repos=$DEFAULT_FOR_NEW_REPOS"
   echo "  POST /orgs/$ORG/code-security/configurations/<id>/attach  scope=$ATTACH_SCOPE"
   echo "  PUT  /orgs/$ORG/actions/permissions/workflow  default_workflow_permissions=$ACTIONS_DEFAULT_PERMS can_approve_pull_request_reviews=$ACTIONS_APPROVE_PR"
