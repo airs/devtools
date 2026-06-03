@@ -21,6 +21,11 @@ DRY_RUN=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --config)
+      if [ $# -lt 2 ]; then
+        echo "--config に値がありません" >&2
+        echo "usage: ghas-setup [--config <path>] [--dry-run]" >&2
+        exit 1
+      fi
       CONFIG="$2"; shift 2 ;;
     --config=*)
       CONFIG="${1#*=}"; shift ;;
@@ -101,9 +106,10 @@ gh auth status -h github.com 2>&1 | grep -q "admin:org" || {
 
 echo "==> $ORG org の code security configuration を有効化します"
 
-# 既存 configuration を name で lookup（冪等化のため）
-CONFIG_ID=$(gh api "/orgs/$ORG/code-security/configurations" \
-  --jq ".[] | select(.name == \"$CONFIG_NAME\") | .id" | head -n1)
+# 既存 configuration を name で lookup（冪等化のため）。name は config 由来の文字列なので
+# jq 式に直埋めせず env 経由で渡す（" や \ を含んでも jq 式が壊れない）。
+CONFIG_ID=$(GHAS_CONFIG_NAME="$CONFIG_NAME" gh api "/orgs/$ORG/code-security/configurations" \
+  --jq '.[] | select(.name == env.GHAS_CONFIG_NAME) | .id' | head -n1)
 
 if [ -z "$CONFIG_ID" ]; then
   echo "  - configuration を新規作成: $CONFIG_NAME"

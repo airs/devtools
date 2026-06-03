@@ -43,6 +43,13 @@ EOF
   [[ "$output" == *"usage: ghas-setup"* ]]
 }
 
+@test "--config に値が無いと usage を出して exit 1" {
+  write_config "$REPO"
+  run "$GHAS_SETUP" --config
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--config に値がありません"* ]]
+}
+
 @test "git 管理外で実行すると明確なエラーで exit 1" {
   mkdir -p "$BASE/nongit"
   cd "$BASE/nongit"

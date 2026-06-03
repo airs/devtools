@@ -60,8 +60,9 @@
                 touch "$out"
               '';
 
-          # ghas-setup を PATH に載せて bats を実行（gh api を叩く本適用パスは認証が要るため
-          # 検証せず、引数パース・pre-flight・--dry-run のみ。gh は不要）。
+          # ghas-setup を PATH に載せて bats を実行。テストは引数パース・pre-flight・--dry-run
+          # のみで gh api を呼ばない（gh auth チェックより手前で exit する）。wrap 済みパッケージを
+          # 使うため closure には gh が入るが、テスト実行時に起動はしない。
           ghas-setup-bats =
             pkgs.runCommand "ghas-setup-bats"
               {
