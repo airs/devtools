@@ -64,8 +64,13 @@ canonicalize_dir() {
   ( cd "$1" 2>/dev/null && pwd -P ) || printf '%s' "$1"
 }
 
-# リポジトリルート (このスクリプトを呼んだ worktree のルート)
-REPO_ROOT=$(canonicalize_dir "$(git rev-parse --show-toplevel)")
+# リポジトリルート (このスクリプトを呼んだ worktree のルート)。git 管理外で実行された場合は
+# git の生エラーではなく、何をすべきか分かるメッセージで終了する。
+if ! REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null); then
+  echo "error: not inside a git worktree. Run env-init from within a git repository." >&2
+  exit 1
+fi
+REPO_ROOT=$(canonicalize_dir "$REPO_ROOT")
 ENV_PATH="$REPO_ROOT/.env"
 TEMPLATE_PATH="$REPO_ROOT/.env.template"
 

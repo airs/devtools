@@ -40,6 +40,14 @@ EOF
   [ "$status" -eq 2 ]
 }
 
+@test "git 管理外で実行すると明確なエラーで exit 1" {
+  mkdir -p "$BASE/nongit"
+  cd "$BASE/nongit"
+  run "$ENV_INIT"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"git worktree"* ]]
+}
+
 @test ".env.template が無ければ exit 1" {
   run "$ENV_INIT"
   [ "$status" -eq 1 ]
