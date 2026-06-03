@@ -7,7 +7,7 @@
     "statix@0",
     "deadnix@1",
     "nixfmt@1",
-    "bats@1",
+    "bats@1.12.0",
     "path:.#env-init"
   ],
   "env": {
