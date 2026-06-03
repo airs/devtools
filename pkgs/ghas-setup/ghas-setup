@@ -106,10 +106,13 @@ gh auth status -h github.com 2>&1 | grep -q "admin:org" || {
 
 echo "==> $ORG org の code security configuration を有効化します"
 
-# 既存 configuration を name で lookup（冪等化のため）。name は config 由来の文字列なので
-# jq 式に直埋めせず env 経由で渡す（" や \ を含んでも jq 式が壊れない）。
-CONFIG_ID=$(GHAS_CONFIG_NAME="$CONFIG_NAME" gh api --paginate "/orgs/$ORG/code-security/configurations" \
-  --jq '.[] | select(.name == env.GHAS_CONFIG_NAME) | .id' | head -n1)
+# 既存 configuration を name で lookup（冪等化のため）。configuration が 30 件（既定 per_page）を
+# 超えても取りこぼさないよう --paginate で全件取得する。--slurp で全ページを 1 つの配列にまとめ、
+# jq 側で最初の一致 id を取り出す（`| head -n1` だと pagination 途中で stdout が閉じ、gh が SIGPIPE
+# で非 0 終了して set -o pipefail がスクリプト全体を落としうるため使わない）。
+# name は config 由来の文字列なので jq 式に直埋めせず env 経由で渡す（" や \ を含んでも壊れない）。
+CONFIG_ID=$(GHAS_CONFIG_NAME="$CONFIG_NAME" gh api --paginate --slurp "/orgs/$ORG/code-security/configurations" \
+  --jq '[.[][] | select(.name == env.GHAS_CONFIG_NAME) | .id] | .[0] // ""')
 
 if [ -z "$CONFIG_ID" ]; then
   echo "  - configuration を新規作成: $CONFIG_NAME"

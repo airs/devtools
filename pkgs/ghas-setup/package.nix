@@ -5,7 +5,8 @@
 # shebang を nix store の bash に固定する理由・PATH prefix で既存 PATH を suffix に残す理由は同じ）。
 #
 # 同梱する runtimeInputs: スクリプトが使う git (rev-parse) / gh (api) / yq (yq-go, config 読み) /
-# coreutils。gh は closure が重いが、利用側の ~/.config/gh 認証状態を読むため動作上の問題はない。
+# gnugrep (admin:org scope 判定の grep。coreutils には grep が入らない) / coreutils。
+# gh は closure が重いが、利用側の ~/.config/gh 認証状態を読むため動作上の問題はない。
 {
   lib,
   runCommand,
@@ -14,6 +15,7 @@
   coreutils,
   git,
   gh,
+  gnugrep,
   yq-go,
 }:
 runCommand "ghas-setup"
@@ -34,6 +36,7 @@ runCommand "ghas-setup"
           coreutils
           git
           gh
+          gnugrep
           yq-go
         ]
       }
